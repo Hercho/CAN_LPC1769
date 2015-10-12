@@ -113,9 +113,6 @@ uint32_t J1939_Mask=0;
 /*****************************************************************************
  * Public types/enumerations/variables
  ****************************************************************************/
-static char WelcomeMenu[] = "\n\rHello NXP Semiconductors \r\n"
-							"CAN DEMO : Use CAN to transmit and receive Message from CAN Analyzer\r\n"
-							"CAN bit rate : 500000 kBit/s\r\n";
 
 #if AF_LUT_USED
 #if FULL_CAN_AF_USED
