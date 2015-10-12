@@ -29,7 +29,7 @@ all: periph_can.axf
 periph_can.axf: $(OBJS) $(USER_OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: MCU Linker'
-	arm-none-eabi-gcc -nostdlib -L"/home/hernan/repo-git/CAN_LPC1769/LPC-CAN/lpc_chip_175x_6x/Debug" -L"/home/hernan/repo-git/CAN_LPC1769/LPC-CAN/lpc_board_nxp_lpcxpresso_1769/Debug" -Xlinker -Map="periph_can.map" -Xlinker --gc-sections -mcpu=cortex-m3 -mthumb -T "periph_can_Debug.ld" -o "periph_can.axf" $(OBJS) $(USER_OBJS) $(LIBS)
+	arm-none-eabi-gcc -nostdlib -L"/home/hernan/repo_github/CAN_LPC1769/LPC-CAN/lpc_chip_175x_6x/Debug" -L"/home/hernan/repo_github/CAN_LPC1769/LPC-CAN/lpc_board_nxp_lpcxpresso_1769/Debug" -Xlinker -Map="periph_can.map" -Xlinker --gc-sections -mcpu=cortex-m3 -mthumb -T "periph_can_Debug.ld" -o "periph_can.axf" $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 	$(MAKE) --no-print-directory post-build

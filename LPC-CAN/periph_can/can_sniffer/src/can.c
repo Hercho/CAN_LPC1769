@@ -53,6 +53,8 @@
 #define CAN_TX_MSG_REMOTE_STD_ID (0x300)
 #define CAN_TX_MSG_EXT_ID (0x10000200) // ID Elm 0x18db33f1 -> trama OBD 0101 (18db33f121100000)
 #define CAN_RX_MSG_ID (0x100)
+
+uint32_t J1939_Mask=0;
 /*
  * COMANDOS OBD ELM327
  *
@@ -217,8 +219,15 @@ static void PrintCANMsg(CAN_MSG_T *pMsg)
 		DEBUGOUT("%x ", pMsg->Data[i]);
 	DEBUGOUT("\r\n\t**************************\r\n");
 */
-	/*Saco mensage entero ?*/
-	DEBUGOUT("\n\r ID:%x DLC:%x ", (pMsg->ID & (~CAN_EXTEND_ID_USAGE)),pMsg->DLC);
+	/*mensage entero ?*/
+	if (J1939_Mask==0)
+		DEBUGOUT("\n\r ID:%x DLC:%x ", (pMsg->ID & (~CAN_EXTEND_ID_USAGE)),pMsg->DLC);
+	else if(J1939_Mask==1)
+	{
+		/*to J1939 format*/
+		pMsg->ID=(pMsg->ID & (~CAN_EXTEND_ID_USAGE));
+		DEBUGOUT("\n\r ID:%d DLC:%x ", (int)(pMsg->ID&=0b111111111111111100000000)>>8,pMsg->DLC);
+	}
 	DEBUGOUT("DATA:");
 	for (i = 0; i < pMsg->DLC; i++)
 			DEBUGOUT("%x", pMsg->Data[i]);
@@ -461,108 +470,119 @@ int main(void)
 
 	SystemCoreClockUpdate();
 	Board_Init();
-	DEBUGOUT("\n\r\n\r CAN SNIFFER \n\r\n\r Seleccionar velocidad \n\r\n\r 1- 50kbps \n\r 2- 125kbps \n\r 3- 250kbps \n\r 4- 500kbps");//WelcomeMenu);
 
-	while (baudrate_can != '1' && baudrate_can !='2' && baudrate_can != '3' && baudrate_can !='4')
+	while (1)
 	{
-		for(i=0;i<100000;i++);
-		{
-			//nothing
-			Board_LED_Toggle(22);
-		}
-		baudrate_can = DEBUGIN();
+			DEBUGOUT("\n\r\n\r CAN SNIFFER \n\r================\n\r\n\r Seleccionar velocidad \n\r\n\r 1- 50kbps \n\r 2- 125kbps \n\r 3- 250kbps \n\r 4- 250kbps / CAN-J1939 \n\r 5- 500kbps");//WelcomeMenu);
+
+			while ( baudrate_can != '1' && baudrate_can !='2' && baudrate_can != '3' && baudrate_can !='4'&& baudrate_can !='5')
+			{
+				for(i=0;i<100000;i++);
+				{
+					//nothing
+					Board_LED_Toggle(22);
+				}
+				baudrate_can = DEBUGIN();
+			}
+
+			Chip_CAN_Init(LPC_CAN, LPC_CANAF, LPC_CANAF_RAM);
+
+			if(baudrate_can == '3')
+			{
+				Chip_CAN_SetBitRate(LPC_CAN, 250000);//500000); //250000 ARDUINO OK
+				DEBUGOUT("\n\r Config at 250kbps");
+
+			}else if (baudrate_can == '5')
+			{
+				Chip_CAN_SetBitRate(LPC_CAN, 500000);
+				DEBUGOUT("\n\r Config at 500kbps");
+
+			}else if (baudrate_can == '1')
+			{
+				Chip_CAN_SetBitRate(LPC_CAN, 50000);
+				DEBUGOUT("\n\r Config at 50kbps");
+
+			}else if (baudrate_can == '2')
+			{
+				Chip_CAN_SetBitRate(LPC_CAN, 125000);
+				DEBUGOUT("\n\r Config at 125kbps");
+			}else if (baudrate_can == '4')
+			{
+				Chip_CAN_SetBitRate(LPC_CAN, 250000);
+				J1939_Mask=1;
+				DEBUGOUT("\n\r Config at 250kbps, J1939 Mask");
+			}
+
+			Chip_CAN_EnableInt(LPC_CAN, CAN_IER_BITMASK);
+			Chip_CAN_EnableInt(LPC_CAN, CAN_IER_IDIE); //page 383
+			Chip_CAN_EnableInt(LPC_CAN, CAN_IER_RIE);//only intrrup when recive message CAN_IER_BITMASK);
+
+
+			/* set low pin enable -Normal Mode- TLE6250 CAN Transceiver */
+			Chip_GPIO_SetPinDIROutput(LPC_GPIO,0,21);
+			Chip_GPIO_SetPinState(LPC_GPIO,0,21,FALSE);
+
+
+		#if AF_LUT_USED
+			SetupAFLUT();
+			ChangeAFLUT();
+			PrintAFLUT();
+		#if FULL_CAN_AF_USED
+			Chip_CAN_ConfigFullCANInt(LPC_CANAF, ENABLE);
+			Chip_CAN_SetAFMode(LPC_CANAF, CAN_AF_BYBASS_MODE);// CAN_AF_FULL_MODE);
+		#else
+			Chip_CAN_SetAFMode(LPC_CANAF, CAN_AF_NORMAL_MODE);
+		#endif /*FULL_CAN_AF_USED*/
+		#else
+			Chip_CAN_SetAFMode(LPC_CANAF, CAN_AF_BYBASS_MODE); //modo monitor...
+		#endif /*AF_LUT_USED*/
+			NVIC_EnableIRQ(CAN_IRQn); //habilito interrupciones can....
+		/*
+			SendMsgBuf.ID = CAN_TX_MSG_STD_ID;
+			SendMsgBuf.DLC = 4;
+			SendMsgBuf.Type = 0;
+			SendMsgBuf.Data[0] = 'A';
+			SendMsgBuf.Data[1] = 'B';
+			SendMsgBuf.Data[2] = 'C';
+			SendMsgBuf.Data[3] = 'D';
+			TxBuf = Chip_CAN_GetFreeTxBuf(LPC_CAN);
+			Chip_CAN_Send(LPC_CAN, TxBuf, &SendMsgBuf);
+			while ((Chip_CAN_GetStatus(LPC_CAN) & CAN_SR_TCS(TxBuf)) == 0) {}
+			DEBUGOUT("Message Sent!!!\r\n");
+			PrintCANMsg(&SendMsgBuf);
+
+			SendMsgBuf.ID = CAN_TX_MSG_REMOTE_STD_ID;
+			SendMsgBuf.Type = CAN_REMOTE_MSG;
+			SendMsgBuf.DLC = 8;
+			TxBuf = Chip_CAN_GetFreeTxBuf(LPC_CAN);
+			Chip_CAN_Send(LPC_CAN, TxBuf, &SendMsgBuf);
+			while ((Chip_CAN_GetStatus(LPC_CAN) & CAN_SR_TCS(TxBuf)) == 0) {}
+			DEBUGOUT("Message Sent!!!\r\n");
+			PrintCANMsg(&SendMsgBuf);
+
+			SendMsgBuf.ID = CAN_EXTEND_ID_USAGE | CAN_TX_MSG_EXT_ID;
+			SendMsgBuf.Type = 0;
+			SendMsgBuf.Data[0] = 'E';
+			SendMsgBuf.Data[1] = 'F';
+			SendMsgBuf.Data[2] = 'G';
+			SendMsgBuf.Data[3] = 'H';
+			SendMsgBuf.Data[4] = 'I';
+			SendMsgBuf.Data[5] = 'J';
+			SendMsgBuf.Data[6] = 'K';
+			SendMsgBuf.Data[7] = 'L';
+			TxBuf = Chip_CAN_GetFreeTxBuf(LPC_CAN);
+			Chip_CAN_Send(LPC_CAN, TxBuf, &SendMsgBuf);
+			while ((Chip_CAN_GetStatus(LPC_CAN) & CAN_SR_TCS(TxBuf)) == 0) {}
+			DEBUGOUT("Message Sent!!!\r\n");
+			PrintCANMsg(&SendMsgBuf);
+			*/
+			/* Wait for messages received */
+			while ( baudrate_can != 's')
+						{
+							baudrate_can = DEBUGIN();
+						}
 	}
-
-	Chip_CAN_Init(LPC_CAN, LPC_CANAF, LPC_CANAF_RAM);
-
-	if(baudrate_can == '3')
-	{
-		Chip_CAN_SetBitRate(LPC_CAN, 250000);//500000); //250000 ARDUINO OK
-		DEBUGOUT("\n\r Config at 250kbps");
-
-	}else if (baudrate_can == '4')
-	{
-		Chip_CAN_SetBitRate(LPC_CAN, 500000);
-		DEBUGOUT("\n\r Config at 500kbps");
-
-	}else if (baudrate_can == '1')
-	{
-		Chip_CAN_SetBitRate(LPC_CAN, 50000);
-		DEBUGOUT("\n\r Config at 50kbps");
-
-	}else if (baudrate_can == '2')
-	{
-		Chip_CAN_SetBitRate(LPC_CAN, 125000);
-		DEBUGOUT("\n\r Config at 125kbps");
-	}
-
-	Chip_CAN_EnableInt(LPC_CAN, CAN_IER_BITMASK);
-	Chip_CAN_EnableInt(LPC_CAN, CAN_IER_IDIE); //page 383
-	Chip_CAN_EnableInt(LPC_CAN, CAN_IER_RIE);//only intrrup when recive message CAN_IER_BITMASK);
-
-
-	/* set low pin enable TLE6205 CAN Transceiver */
-	Chip_GPIO_SetPinDIROutput(LPC_GPIO,0,21);
-	Chip_GPIO_SetPinState(LPC_GPIO,0,21,FALSE);
-
-
-#if AF_LUT_USED
-	SetupAFLUT();
-	ChangeAFLUT();
-	PrintAFLUT();
-#if FULL_CAN_AF_USED
-	Chip_CAN_ConfigFullCANInt(LPC_CANAF, ENABLE);
-	Chip_CAN_SetAFMode(LPC_CANAF, CAN_AF_BYBASS_MODE);// CAN_AF_FULL_MODE);
-#else
-	Chip_CAN_SetAFMode(LPC_CANAF, CAN_AF_NORMAL_MODE);
-#endif /*FULL_CAN_AF_USED*/
-#else
-	Chip_CAN_SetAFMode(LPC_CANAF, CAN_AF_BYBASS_MODE); //modo monitor...
-#endif /*AF_LUT_USED*/
-	NVIC_EnableIRQ(CAN_IRQn); //habilito interrupciones can....
-/*
-	SendMsgBuf.ID = CAN_TX_MSG_STD_ID;
-	SendMsgBuf.DLC = 4;
-	SendMsgBuf.Type = 0;
-	SendMsgBuf.Data[0] = 'A';
-	SendMsgBuf.Data[1] = 'B';
-	SendMsgBuf.Data[2] = 'C';
-	SendMsgBuf.Data[3] = 'D';
-	TxBuf = Chip_CAN_GetFreeTxBuf(LPC_CAN);
-	Chip_CAN_Send(LPC_CAN, TxBuf, &SendMsgBuf);
-	while ((Chip_CAN_GetStatus(LPC_CAN) & CAN_SR_TCS(TxBuf)) == 0) {}
-	DEBUGOUT("Message Sent!!!\r\n");
-	PrintCANMsg(&SendMsgBuf);
-
-	SendMsgBuf.ID = CAN_TX_MSG_REMOTE_STD_ID;
-	SendMsgBuf.Type = CAN_REMOTE_MSG;
-	SendMsgBuf.DLC = 8;
-	TxBuf = Chip_CAN_GetFreeTxBuf(LPC_CAN);
-	Chip_CAN_Send(LPC_CAN, TxBuf, &SendMsgBuf);
-	while ((Chip_CAN_GetStatus(LPC_CAN) & CAN_SR_TCS(TxBuf)) == 0) {}
-	DEBUGOUT("Message Sent!!!\r\n");
-	PrintCANMsg(&SendMsgBuf);
-
-	SendMsgBuf.ID = CAN_EXTEND_ID_USAGE | CAN_TX_MSG_EXT_ID;
-	SendMsgBuf.Type = 0;
-	SendMsgBuf.Data[0] = 'E';
-	SendMsgBuf.Data[1] = 'F';
-	SendMsgBuf.Data[2] = 'G';
-	SendMsgBuf.Data[3] = 'H';
-	SendMsgBuf.Data[4] = 'I';
-	SendMsgBuf.Data[5] = 'J';
-	SendMsgBuf.Data[6] = 'K';
-	SendMsgBuf.Data[7] = 'L';
-	TxBuf = Chip_CAN_GetFreeTxBuf(LPC_CAN);
-	Chip_CAN_Send(LPC_CAN, TxBuf, &SendMsgBuf);
-	while ((Chip_CAN_GetStatus(LPC_CAN) & CAN_SR_TCS(TxBuf)) == 0) {}
-	DEBUGOUT("Message Sent!!!\r\n");
-	PrintCANMsg(&SendMsgBuf);
-	*/
-	/* Wait for messages received */
-	while (1) ;
 }
-
 /**
  * @}
  */
